@@ -89,7 +89,7 @@ for i in "${patch_files[@]}"; do
     # drivers/tty changes
     # pty.c
     drivers/tty/pty.c)
-        sed -i '0,/static struct tty_struct \*pts_unix98_lookup(struct tty_driver \*driver,/s//#ifdef CONFIG_KSU\nextern int ksu_handle_devpts(struct inode*);\n#endif\n&/' drivers/tty/pty.c
+        sed -i '0,/static struct tty_struct \*pts_unix98_lookup(struct tty_driver \*driver,/s//#ifdef CONFIG_KSU\nextern int __ksu_handle_devpts(struct inode*);\n#endif\n&/' drivers/tty/pty.c
         sed -i ':a;N;$!ba;s/\(\tmutex_lock(&devpts_mutex);\)/#ifdef CONFIG_KSU\n\tksu_handle_devpts((struct inode *)file->f_path.dentry->d_inode);\n#endif\n\1/2' drivers/tty/pty.c
         ;;
 
@@ -167,11 +167,11 @@ int path_umount(struct path *path, int flags)\n\
     fs/devpts/inode.c)
         sed -i '/struct dentry \*devpts_pty_new/,/return dentry;/ {
     /return dentry;/ {n; a\
-#ifdef CONFIG_KSU\nextern int ksu_handle_devpts(struct inode*);\n#endif
+#ifdef CONFIG_KSU\nextern int __ksu_handle_devpts(struct inode*);\n#endif
     }
 }
         /if (dentry->d_sb->s_magic != DEVPTS_SUPER_MAGIC)/i\
-	#ifdef CONFIG_KSU\n	ksu_handle_devpts(dentry->d_inode);\n	#endif' fs/devpts/inode.c
+	#ifdef CONFIG_KSU\n	__ksu_handle_devpts(dentry->d_inode);\n	#endif' fs/devpts/inode.c
         ;;
     esac
 
