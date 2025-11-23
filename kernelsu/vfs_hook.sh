@@ -10,7 +10,7 @@ patch_files=(
     fs/read_write.c
     fs/stat.c
     fs/namespace.c
-    fs/devpts/inode.c
+    #fs/devpts/inode.c
     drivers/input/input.c
     drivers/tty/pty.c
     security/security.c
