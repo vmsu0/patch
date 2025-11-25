@@ -3,10 +3,10 @@
 set -eu
 
 # Download source and patches
-aria2c https://github.com/Fyj69/patch/raw/main/rekernel/src.zip
-aria2c -d cocci https://raw.githubusercontent.com/Fyj69/patch/main/rekernel/patches/proc_ops.patch
-aria2c -d cocci https://raw.githubusercontent.com/Fyj69/patch/main/rekernel/patches/binder.patch
-aria2c -d cocci https://raw.githubusercontent.com/Fyj69/patch/main/rekernel/patches/signal.patch
+aria2c https://github.com/dabao1955/kernel_build_action/raw/main/rekernel/src.zip
+aria2c -d cocci https://raw.githubusercontent.com/dabao1955/kernel_build_action/main/rekernel/patches/proc_ops.cocci
+aria2c -d cocci https://raw.githubusercontent.com/dabao1955/kernel_build_action/main/rekernel/patches/binder.cocci
+aria2c -d cocci https://raw.githubusercontent.com/dabao1955/kernel_build_action/main/rekernel/patches/signal.cocci
 
 # Extract source
 unzip src.zip
@@ -15,7 +15,7 @@ mv -v rekernel drivers/
 # Apply Coccinelle patches to C files
 rekernel_file=drivers/rekernel/rekernel.c
 if grep -q 'struct proc_ops' include/linux/proc_fs.h; then
-    patch -p1 -F 3 < cocci/proc_ops.patch
+    spatch --in-place --sp-file cocci/proc_ops.cocci "$rekernel_file"
 fi
 
 patch_files=(
@@ -31,10 +31,10 @@ for i in "${patch_files[@]}"; do
                     echo "Error: Could not find 'binder_proc_transaction()' in '$i'"
                     continue
                 fi
-                patch -p1 -F 3 < cocci/binder.patch
+                spatch --in-place --sp-file cocci/binder.cocci "$i"
                 ;;
             kernel/signal.c)
-                patch -p1 -F 3 < cocci/signal.patch
+                spatch --in-place --sp-file cocci/signal.cocci "$i"
                 ;;
         esac
     fi
