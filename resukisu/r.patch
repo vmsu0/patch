@@ -1,0 +1,270 @@
+diff -ruN a/fs/exec.c b/fs/exec.c
+--- a/fs/exec.c	2026-02-10 15:47:58.268004000 +0800
++++ b/fs/exec.c	2026-02-10 16:01:16.912016000 +0800
+@@ -1829,12 +1829,21 @@
+ 	return retval;
+ }
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot))
++extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
++				void *argv, void *envp, int *flags);
++#endif
++
+ int do_execve(struct filename *filename,
+ 	const char __user *const __user *__argv,
+ 	const char __user *const __user *__envp)
+ {
+ 	struct user_arg_ptr argv = { .ptr.native = __argv };
+ 	struct user_arg_ptr envp = { .ptr.native = __envp };
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
++#endif
+ 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+ }
+
+@@ -1862,6 +1871,9 @@
+ 		.is_compat = true,
+ 		.ptr.compat = __envp,
+ 	};
++#ifdef CONFIG_KSU_MANUAL_HOOK // 32-bit ksud and 32-on-64 support
++	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
++#endif
+ 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+ }
+
+diff -ruN a/security/selinux/hooks.c b/security/selinux/hooks.c
+--- a/security/selinux/hooks.c	2026-02-10 15:47:59.876004000 +0800
++++ b/security/selinux/hooks.c	2026-02-10 16:30:26.988042000 +0800
+@@ -2298,6 +2298,11 @@
+ 	return sid;
+ }
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern bool is_ksu_transition(const struct task_security_struct *old_tsec,
++				const struct task_security_struct *new_tsec);
++#endif
++
+ static int check_nnp_nosuid(const struct linux_binprm *bprm,
+ 			    const struct task_security_struct *old_tsec,
+ 			    const struct task_security_struct *new_tsec)
+@@ -2312,6 +2317,11 @@
+ 	if (new_tsec->sid == old_tsec->sid)
+ 		return 0; /* No change in credentials */
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	if (is_ksu_transition(old_tsec, new_tsec))
++		return 0;
++#endif
++
+ 	/*
+ 	 * The only transitions we permit under NNP or nosuid
+ 	 * are transitions to bounded SIDs, i.e. SIDs that are
+diff -ruN a/drivers/input/input.c b/drivers/input/input.c
+--- a/drivers/input/input.c	2026-02-10 15:47:51.868004000 +0800
++++ b/drivers/input/input.c	2026-02-10 16:19:55.884032000 +0800
+@@ -425,11 +425,23 @@
+  * to 'seed' initial state of a switch or initial position of absolute
+  * axis, etc.
+  */
++
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern bool ksu_input_hook __read_mostly;
++extern __attribute__((cold)) int ksu_handle_input_handle_event(
++			unsigned int *type, unsigned int *code, int *value);
++#endif
++
+ void input_event(struct input_dev *dev,
+ 		 unsigned int type, unsigned int code, int value)
+ {
+ 	unsigned long flags;
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	if (unlikely(ksu_input_hook))
++		ksu_handle_input_handle_event(&type, &code, &value);
++#endif
++
+ 	if (is_event_supported(type, dev->evbit, EV_MAX)) {
+
+ 		spin_lock_irqsave(&dev->event_lock, flags);
+diff -ruN a/fs/namespace.c b/fs/namespace.c
+--- a/fs/namespace.c	2026-02-10 15:47:58.316004000 +0800
++++ b/fs/namespace.c	2026-02-10 16:33:46.492045000 +0800
+@@ -1695,6 +1695,40 @@
+ 	return capable(CAP_SYS_ADMIN);
+ }
+
++static int can_umount(const struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++
++	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
++		return -EINVAL;
++	if (!may_mount())
++		return -EPERM;
++	if (path->dentry != path->mnt->mnt_root)
++		return -EINVAL;
++	if (!check_mnt(mnt))
++		return -EINVAL;
++	if (mnt->mnt.mnt_flags & MNT_LOCKED) /* Check optimistically */
++		return -EINVAL;
++	if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
++		return -EPERM;
++	return 0;
++}
++
++int path_umount(struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++	int ret;
++
++	ret = can_umount(path, flags);
++	if (!ret)
++		ret = do_umount(mnt, flags);
++
++	/* we mustn't call path_put() as that would clear mnt_expiry_mark */
++	dput(path->dentry);
++	mntput_no_expire(mnt);
++	return ret;
++}
++
+ /*
+  * Now umount can handle mount points as well as block devices.
+  * This is important for filesystems which use unnamed block devices.
+diff -ruN a/fs/open.c b/fs/open.c
+--- a/fs/open.c	2026-02-10 15:47:58.368004000 +0800
++++ b/fs/open.c	2026-02-10 16:15:43.816029000 +0800
+@@ -355,6 +355,12 @@
+ 	return error;
+ }
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot))
++extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
++				int *mode, int *flags);
++#endif
++
+ /*
+  * access() needs to use the real uid/gid, not the effective uid/gid.
+  * We do this by temporarily clearing all FS-related capabilities and
+@@ -370,6 +376,10 @@
+ 	int res;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW;
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
++#endif
++
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+
+diff -ruN a/kernel/reboot.c b/kernel/reboot.c
+--- a/kernel/reboot.c	2026-02-10 15:47:59.080004000 +0800
++++ b/kernel/reboot.c	2026-02-10 16:13:13.388026000 +0800
+@@ -277,6 +277,11 @@
+  *
+  * reboot doesn't sync: do that yourself before calling this.
+  */
++
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
++#endif
++
+ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+ 		void __user *, arg)
+ {
+@@ -284,6 +289,9 @@
+ 	char buffer[256];
+ 	int ret = 0;
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
++#endif
+ 	/* We only trust the superuser with rebooting the system. */
+ 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
+ 		return -EPERM;
+diff -ruN a/fs/stat.c b/fs/stat.c
+--- a/fs/stat.c	2026-02-10 15:47:58.396004000 +0800
++++ b/fs/stat.c	2026-02-10 16:10:20.436024000 +0800
+@@ -287,6 +287,17 @@
+ 	return cp_new_stat(&stat, statbuf);
+ }
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot))
++extern int ksu_handle_stat(int *dfd, const char __user **filename_user,
++				int *flags);
++
++extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
++#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
++extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr); // optional
++#endif
++#endif
++
+ #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
+ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+ 		struct stat __user *, statbuf, int, flag)
+@@ -294,6 +305,9 @@
+ 	struct kstat stat;
+ 	int error;
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_stat(&dfd, &filename, &flag);
++#endif
+ 	error = vfs_fstatat(dfd, filename, &stat, flag);
+ 	if (error)
+ 		return error;
+@@ -309,6 +323,9 @@
+ 	if (!error)
+ 		error = cp_new_stat(&stat, statbuf);
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_newfstat_ret(&fd, &statbuf);
++#endif
+ 	return error;
+ }
+
+@@ -427,6 +444,9 @@
+ 	if (!error)
+ 		error = cp_new_stat64(&stat, statbuf);
+
++#ifdef CONFIG_KSU_MANUAL_HOOK // for 32-bit
++	ksu_handle_fstat64_ret(&fd, &statbuf);
++#endif
+ 	return error;
+ }
+
+@@ -436,6 +456,9 @@
+ 	struct kstat stat;
+ 	int error;
+
++#ifdef CONFIG_KSU_MANUAL_HOOK // 32-bit su
++	ksu_handle_stat(&dfd, &filename, &flag);
++#endif
+ 	error = vfs_fstatat(dfd, filename, &stat, flag);
+ 	if (error)
+ 		return error;
+diff -ruN a/kernel/sys.c b/kernel/sys.c
+--- a/kernel/sys.c	2026-02-10 15:47:59.100004000 +0800
++++ b/kernel/sys.c	2026-02-10 16:24:01.300036000 +0800
+@@ -577,6 +577,9 @@
+ 	return retval;
+ }
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
++#endif
+
+ /*
+  * This function implements a generic ability to update ruid, euid,
+@@ -590,6 +593,10 @@
+ 	int retval;
+ 	kuid_t kruid, keuid, ksuid;
+
++#ifdef CONFIG_KSU_MANUAL_HOOK
++       (void)ksu_handle_setresuid(ruid, euid, suid);
++#endif
++
+ 	kruid = make_kuid(ns, ruid);
+ 	keuid = make_kuid(ns, euid);
+ 	ksuid = make_kuid(ns, suid);
