@@ -339,7 +339,7 @@ index 000000000000..942d4cb152ab
 +};
 +
 +static inline bool frozen_task_group(struct task_struct* task) {
-+    return (cgroup_task_frozen(task) || cgroup_freezing(task));
++    return cgroup_freezing(task);
 +}
 +
 +extern void rekernel_report_no_binder_rpc_code(int type, pid_t src_pid, struct task_struct* src, pid_t dst_pid, struct task_struct* dst, bool oneway, char* rpc_name);
