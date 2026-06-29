@@ -11,7 +11,6 @@ patch_files=(
     fs/stat.c
     fs/namei.c
     fs/namespace.c
-    security/selinux/selinuxfs.c
     drivers/input/input.c
     security/security.c
     security/selinux/hooks.c
@@ -21,7 +20,7 @@ patch_files=(
     include/linux/seccomp.h
 )
 
-PATCH_LEVEL="2.1"
+PATCH_LEVEL="2.2"
 KERNEL_VERSION=$(head -n 3 Makefile | grep -E 'VERSION|PATCHLEVEL' | awk '{print $3}' | paste -sd '.')
 FIRST_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $1}')
 SECOND_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $2}')
@@ -163,6 +162,7 @@ for i in "${patch_files[@]}"; do
         echo "======================================"
         ;;
 
+    ## namespace.c
     fs/namespace.c)
         if [[ $(grep -c "static int can_umount(const struct" fs/namespace.c) == 0 ]]; then
             if grep -q "may_mandlock(void)" fs/namespace.c; then
@@ -210,10 +210,6 @@ int path_umount(struct path *path, int flags)\n\
         fi
         ;;
 
-security/selinux/selinuxfs.c)
-    sed -i 's/^static DEFINE_MUTEX(sel_mutex);$/DEFINE_MUTEX(sel_mutex);/' security/selinux/selinuxfs.c
-    ;;
-
     # drivers changes
     ## input/input.c
     drivers/input/input.c)
@@ -237,7 +233,7 @@ security/selinux/selinuxfs.c)
     # security/ changes
     ## security.c
     security/security.c)
-        if [ "$FIRST_VERSION" -lt 4 ] && [ "$SECOND_VERSION" -lt 19 ]; then
+        if [ "$FIRST_VERSION" -lt 4 ] && [ "$SECOND_VERSION" -lt 19 ] && ! grep -rq --include="*.c" --include="*.h" "ksu_inode_rename" "drivers/kernelsu/" >/dev/null 2>&1; then
             if grep -rq --include="*.c" --include="*.h" "sys_read" "drivers/kernelsu/" >/dev/null 2>&1; then
                 echo "[+] Checked sys_read existed in KernelSU!"
 
@@ -261,6 +257,9 @@ security/selinux/selinuxfs.c)
             else
                 echo "[-] security/security.c patch failed for unknown reasons, please provide feedback in time."
             fi
+        elif grep -rq --include="*.c" --include="*.h" "ksu_inode_rename" "drivers/kernelsu/" >/dev/null 2>&1; then
+            echo "[-] KernelSU needn't security.c hooks, Skipped."
+
         else
             echo "[-] Kernel needn't setuid, Skipped."
         fi
@@ -301,7 +300,7 @@ security/selinux/selinuxfs.c)
 
         fi
 
-        if grep -rq --include="*.c" --include="*.h" "ksu_hide_setprocattr" "drivers/kernelsu/" >/dev/null 2>&1; then
+        if grep -rq --include="*.c" --include="*.h" "ksu_hide_setprocattr" "drivers/kernelsu/" && ! grep -rq --include="*.c" --include="*.h" "ksu_inode_rename" "drivers/kernelsu/" >/dev/null 2>&1; then
             if [ "$FIRST_VERSION" -lt 4 ] && [ "$SECOND_VERSION" -lt 19 ]; then
                 echo "[-] Kernel could not hook ksu_hide_setprocattr, Skipped."
 
@@ -326,7 +325,7 @@ security/selinux/selinuxfs.c)
                 echo "[-] security/selinux/hooks.c patch failed for unknown reasons, please provide feedback in time."
             fi
         else
-            echo "[-] KernelSU needn't ksu_hide_setprocattr, Skipped."
+            echo "[-] KernelSU needn't security extra hooks, Skipped."
         fi
 
         echo "======================================"
