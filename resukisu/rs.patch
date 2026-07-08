@@ -1,10 +1,10 @@
-diff -ruN a/fs/exec.c b/fs/exec.c
---- a/fs/exec.c	2026-02-10 15:47:58.268004000 +0800
-+++ b/fs/exec.c	2026-02-10 16:01:16.912016000 +0800
-@@ -1829,12 +1829,21 @@
+diff -urN a/fs/exec.c b/fs/exec.c
+--- a/fs/exec.c	2026-07-08 17:14:53.719978000 +0800
++++ b/fs/exec.c	2026-07-08 17:31:58.923956775 +0800
+@@ -1829,12 +1829,23 @@
  	return retval;
  }
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +__attribute__((hot))
 +extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
@@ -17,83 +17,60 @@ diff -ruN a/fs/exec.c b/fs/exec.c
  {
  	struct user_arg_ptr argv = { .ptr.native = __argv };
  	struct user_arg_ptr envp = { .ptr.native = __envp };
++	
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
-+#endif
++#endif	
++	
  	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
  }
-
-@@ -1862,6 +1871,9 @@
+ 
+@@ -1862,6 +1873,11 @@
  		.is_compat = true,
  		.ptr.compat = __envp,
  	};
++	
 +#ifdef CONFIG_KSU_MANUAL_HOOK // 32-bit ksud and 32-on-64 support
 +	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
-+#endif
++#endif	
++	
  	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
  }
-
-diff -ruN a/security/selinux/hooks.c b/security/selinux/hooks.c
---- a/security/selinux/hooks.c	2026-02-10 15:47:59.876004000 +0800
-+++ b/security/selinux/hooks.c	2026-02-10 16:30:26.988042000 +0800
-@@ -2298,6 +2298,11 @@
- 	return sid;
- }
-
-+#ifdef CONFIG_KSU_MANUAL_HOOK
-+extern bool is_ksu_transition(const struct task_security_struct *old_tsec,
-+				const struct task_security_struct *new_tsec);
-+#endif
-+
- static int check_nnp_nosuid(const struct linux_binprm *bprm,
- 			    const struct task_security_struct *old_tsec,
- 			    const struct task_security_struct *new_tsec)
-@@ -2312,6 +2317,11 @@
- 	if (new_tsec->sid == old_tsec->sid)
- 		return 0; /* No change in credentials */
-
-+#ifdef CONFIG_KSU_MANUAL_HOOK
-+	if (is_ksu_transition(old_tsec, new_tsec))
-+		return 0;
-+#endif
-+
- 	/*
- 	 * The only transitions we permit under NNP or nosuid
- 	 * are transitions to bounded SIDs, i.e. SIDs that are
-diff -ruN a/drivers/input/input.c b/drivers/input/input.c
---- a/drivers/input/input.c	2026-02-10 15:47:51.868004000 +0800
-+++ b/drivers/input/input.c	2026-02-10 16:19:55.884032000 +0800
+ 
+diff -urN a/drivers/input/input.c b/drivers/input/input.c
+--- a/drivers/input/input.c	2026-07-08 17:14:46.791978000 +0800
++++ b/drivers/input/input.c	2026-07-08 17:40:08.667946261 +0800
 @@ -425,11 +425,23 @@
   * to 'seed' initial state of a switch or initial position of absolute
   * axis, etc.
   */
-+
++ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +extern bool ksu_input_hook __read_mostly;
 +extern __attribute__((cold)) int ksu_handle_input_handle_event(
 +			unsigned int *type, unsigned int *code, int *value);
-+#endif
-+
++#endif 
++ 
  void input_event(struct input_dev *dev,
  		 unsigned int type, unsigned int code, int value)
  {
  	unsigned long flags;
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +	if (unlikely(ksu_input_hook))
 +		ksu_handle_input_handle_event(&type, &code, &value);
 +#endif
 +
  	if (is_event_supported(type, dev->evbit, EV_MAX)) {
-
+ 
  		spin_lock_irqsave(&dev->event_lock, flags);
-diff -ruN a/fs/namespace.c b/fs/namespace.c
---- a/fs/namespace.c	2026-02-10 15:47:58.316004000 +0800
-+++ b/fs/namespace.c	2026-02-10 16:33:46.492045000 +0800
+diff -urN a/fs/namespace.c b/fs/namespace.c
+--- a/fs/namespace.c	2026-07-08 17:14:53.851978000 +0800
++++ b/fs/namespace.c	2026-07-08 18:32:31.147878797 +0800
 @@ -1695,6 +1695,40 @@
  	return capable(CAP_SYS_ADMIN);
  }
-
+ 
 +static int can_umount(const struct path *path, int flags)
 +{
 +	struct mount *mnt = real_mount(path->mnt);
@@ -131,15 +108,16 @@ diff -ruN a/fs/namespace.c b/fs/namespace.c
  /*
   * Now umount can handle mount points as well as block devices.
   * This is important for filesystems which use unnamed block devices.
-diff -ruN a/fs/open.c b/fs/open.c
---- a/fs/open.c	2026-02-10 15:47:58.368004000 +0800
-+++ b/fs/open.c	2026-02-10 16:15:43.816029000 +0800
-@@ -355,6 +355,12 @@
+diff -urN a/fs/open.c b/fs/open.c
+--- a/fs/open.c	2026-07-08 17:14:54.019978000 +0800
++++ b/fs/open.c	2026-07-08 17:34:59.299952902 +0800
+@@ -355,6 +355,13 @@
  	return error;
  }
-
+ 
++
 +#ifdef CONFIG_KSU_MANUAL_HOOK
-+__attribute__((hot))
++__attribute__((hot)) 
 +extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
 +				int *mode, int *flags);
 +#endif
@@ -147,51 +125,120 @@ diff -ruN a/fs/open.c b/fs/open.c
  /*
   * access() needs to use the real uid/gid, not the effective uid/gid.
   * We do this by temporarily clearing all FS-related capabilities and
-@@ -370,6 +376,10 @@
+@@ -370,6 +377,10 @@
  	int res;
  	unsigned int lookup_flags = LOOKUP_FOLLOW;
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
 +#endif
 +
  	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
  		return -EINVAL;
-
-diff -ruN a/kernel/reboot.c b/kernel/reboot.c
---- a/kernel/reboot.c	2026-02-10 15:47:59.080004000 +0800
-+++ b/kernel/reboot.c	2026-02-10 16:13:13.388026000 +0800
+ 
+diff -urN a/fs/read_write.c b/fs/read_write.c
+--- a/fs/read_write.c	2026-07-08 17:14:54.047978000 +0800
++++ b/fs/read_write.c	2026-07-08 17:44:38.591940466 +0800
+@@ -581,11 +581,22 @@
+ 		file->f_pos = pos;
+ }
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern bool ksu_init_rc_hook __read_mostly;
++extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,
++				char __user **buf_ptr, size_t *count_ptr);
++#endif
++
+ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
+ {
+ 	struct fd f = fdget_pos(fd);
+ 	ssize_t ret = -EBADF;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	if (unlikely(ksu_init_rc_hook)) 
++		ksu_handle_sys_read(fd, &buf, &count);
++#endif
++
+ 	if (f.file) {
+ 		loff_t pos = file_pos_read(f.file);
+ 		ret = vfs_read(f.file, buf, count, &pos);
+diff -urN a/kernel/reboot.c b/kernel/reboot.c
+--- a/kernel/reboot.c	2026-07-08 17:14:55.023978000 +0800
++++ b/kernel/reboot.c	2026-07-08 17:36:59.875950314 +0800
 @@ -277,6 +277,11 @@
   *
   * reboot doesn't sync: do that yourself before calling this.
   */
-+
++ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
-+#endif
-+
++#endif 
++ 
  SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
  		void __user *, arg)
  {
-@@ -284,6 +289,9 @@
+@@ -284,6 +289,10 @@
  	char buffer[256];
  	int ret = 0;
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
 +#endif
++
  	/* We only trust the superuser with rebooting the system. */
  	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
  		return -EPERM;
-diff -ruN a/fs/stat.c b/fs/stat.c
---- a/fs/stat.c	2026-02-10 15:47:58.396004000 +0800
-+++ b/fs/stat.c	2026-02-10 16:10:20.436024000 +0800
+diff -urN a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+--- a/security/selinux/selinuxfs.c	2026-07-08 17:14:55.815978000 +0800
++++ b/security/selinux/selinuxfs.c	2026-07-08 18:06:47.435911938 +0800
+@@ -61,7 +61,7 @@
+ }
+ __setup("checkreqprot=", checkreqprot_setup);
+ 
+-static DEFINE_MUTEX(sel_mutex);
++DEFINE_MUTEX(sel_mutex);
+ 
+ /* global data for booleans */
+ static struct dentry *bool_dir;
+@@ -259,7 +259,7 @@
+ 			       size, vma->vm_page_prot);
+ }
+ 
+-static const struct file_operations sel_handle_status_ops = {
++const struct file_operations sel_handle_status_ops = {
+ 	.open		= sel_open_handle_status,
+ 	.read		= sel_read_handle_status,
+ 	.mmap		= sel_mmap_handle_status,
+@@ -721,7 +721,7 @@
+ static ssize_t sel_write_user(struct file *file, char *buf, size_t size);
+ static ssize_t sel_write_member(struct file *file, char *buf, size_t size);
+ 
+-static ssize_t (*write_op[])(struct file *, char *, size_t) = {
++ssize_t (*write_op[])(struct file *, char *, size_t) = {
+ 	[SEL_ACCESS] = sel_write_access,
+ 	[SEL_CREATE] = sel_write_create,
+ 	[SEL_RELABEL] = sel_write_relabel,
+diff -urN a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+--- a/security/selinux/ss/services.c	2026-07-08 17:14:55.819978000 +0800
++++ b/security/selinux/ss/services.c	2026-07-08 18:05:25.811913690 +0800
+@@ -75,7 +75,7 @@
+ int selinux_policycap_openperm;
+ int selinux_policycap_alwaysnetwork;
+ 
+-static DEFINE_RWLOCK(policy_rwlock);
++DEFINE_RWLOCK(policy_rwlock);
+ 
+ static struct sidtab sidtab;
+ struct policydb policydb;
+diff -urN a/fs/stat.c b/fs/stat.c
+--- a/fs/stat.c	2026-07-08 17:14:54.071978000 +0800
++++ b/fs/stat.c	2026-07-08 17:24:38.983966219 +0800
 @@ -287,6 +287,17 @@
  	return cp_new_stat(&stat, statbuf);
  }
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
-+__attribute__((hot))
++__attribute__((hot)) 
 +extern int ksu_handle_stat(int *dfd, const char __user **filename_user,
 +				int *flags);
 +
@@ -204,63 +251,67 @@ diff -ruN a/fs/stat.c b/fs/stat.c
  #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
  SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  		struct stat __user *, statbuf, int, flag)
-@@ -294,6 +305,9 @@
+@@ -294,6 +305,10 @@
  	struct kstat stat;
  	int error;
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +	ksu_handle_stat(&dfd, &filename, &flag);
 +#endif
++
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-@@ -309,6 +323,9 @@
+@@ -309,6 +324,10 @@
  	if (!error)
  		error = cp_new_stat(&stat, statbuf);
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +	ksu_handle_newfstat_ret(&fd, &statbuf);
 +#endif
++
  	return error;
  }
-
-@@ -427,6 +444,9 @@
+ 
+@@ -427,6 +446,10 @@
  	if (!error)
  		error = cp_new_stat64(&stat, statbuf);
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK // for 32-bit
 +	ksu_handle_fstat64_ret(&fd, &statbuf);
 +#endif
++
  	return error;
  }
-
-@@ -436,6 +456,9 @@
+ 
+@@ -436,6 +459,10 @@
  	struct kstat stat;
  	int error;
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK // 32-bit su
-+	ksu_handle_stat(&dfd, &filename, &flag);
++	ksu_handle_stat(&dfd, &filename, &flag); 
 +#endif
++
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-diff -ruN a/kernel/sys.c b/kernel/sys.c
---- a/kernel/sys.c	2026-02-10 15:47:59.100004000 +0800
-+++ b/kernel/sys.c	2026-02-10 16:24:01.300036000 +0800
+diff -urN a/kernel/sys.c b/kernel/sys.c
+--- a/kernel/sys.c	2026-07-08 17:14:55.047978000 +0800
++++ b/kernel/sys.c	2026-07-08 17:42:37.291943070 +0800
 @@ -577,6 +577,9 @@
  	return retval;
  }
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
 +#endif
-
+ 
  /*
   * This function implements a generic ability to update ruid, euid,
 @@ -590,6 +593,10 @@
  	int retval;
  	kuid_t kruid, keuid, ksuid;
-
+ 
 +#ifdef CONFIG_KSU_MANUAL_HOOK
 +       (void)ksu_handle_setresuid(ruid, euid, suid);
 +#endif
