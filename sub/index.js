@@ -107,6 +107,17 @@ function handleRequest(req, res) {
 
         res.end(err.message);
 
+    // 释放并发锁
+    locked = false;
+
+    // 处理等待中的请求
+    const next = waiting.shift();
+
+    if (next) {
+
+        handleRequest(next.req, next.res);
+    }
+
     });
 
     // curl 退出异常
