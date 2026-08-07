@@ -12,6 +12,7 @@ export ARGO_PORT=${ARGO_PORT:-'8001'}
 export ARGO_DOMAIN=${ARGO_DOMAIN}
 export ARGO_AUTH=${ARGO_AUTH}
 export SUB_URL=${SUB_URL}
+export TOKEN=${TOKEN}
 
 # 必须 root
 [[ $EUID -ne 0 ]] && echo "Please run as root." && exit 1
@@ -123,6 +124,7 @@ cat > "${APP_DIR}/.env" <<EOF
 ARGO_PORT=${ARGO_PORT}
 ARGO_DOMAIN=${ARGO_DOMAIN}
 ARGO_AUTH=${ARGO_AUTH}
+TOKEN=${TOKEN}
 SUB_URL=${SUB_URL}
 EOF
 
