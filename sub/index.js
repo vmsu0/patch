@@ -2,9 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const { spawn } = require("child_process");
 
-/**
- * 读取 .env
- */
+// 读取 .env
 function loadEnv(file) {
     const env = {};
 
@@ -48,21 +46,21 @@ if (!subUrl) {
 http.createServer((req, res) => {
 
     // Token 验证
-       if (token) {
+    if (token) {
 
-        const url = new URL(req.url, "http://localhost");
+       const url = new URL(req.url, "http://localhost");
 
-        if (url.searchParams.get("token") !== token) {
+       if (url.searchParams.get("token") !== token) {
 
-            res.writeHead(403, {
-                "Content-Type": "text/plain; charset=utf-8"
-            });
+           res.writeHead(403, {
+               "Content-Type": "text/plain; charset=utf-8"
+           });
 
-            res.end("Forbidden");
+           res.end("Forbidden");
 
-            return;
+           return;
 
-        }
+       }
 
     }
 
