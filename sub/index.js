@@ -38,12 +38,15 @@ const subUrl = env.SUB_URL;
 
 const token = env.TOKEN || "";
 
+let locked = false;
+const waiting = [];
+
 if (!subUrl) {
     console.error("SUB_URL is empty.");
     process.exit(1);
 }
 
-http.createServer((req, res) => {
+function handleRequest(req, res) {    
 
     // Token 验证
     if (token && req.url !== "/" + token) {
@@ -57,6 +60,17 @@ http.createServer((req, res) => {
         return;
 
     }
+
+    // 并发锁
+    if (locked) {
+
+        waiting.push({ req, res });
+
+        return;
+
+    }
+
+    locked = true;
 
     const curl = spawn("curl", [
         "-A",
@@ -104,9 +118,23 @@ http.createServer((req, res) => {
 
         }
 
+    // 释放并发锁
+    locked = false;
+
+    // 处理等待中的请求
+    const next = waiting.shift();
+
+    if (next) {
+
+        handleRequest(next.req, next.res);
+
+    }
+
     });
 
-}).listen(port, () => {
+}
+
+http.createServer(handleRequest).listen(port, () => {
 
     console.log(`Listening on ${port}`);
 
