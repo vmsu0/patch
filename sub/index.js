@@ -46,7 +46,7 @@ if (!subUrl) {
     process.exit(1);
 }
 
-function handleRequest(req, res) {    
+function handleRequest(req, res) {
 
     // Token 验证
     if (token && req.url !== "/" + token) {
