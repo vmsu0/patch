@@ -46,21 +46,15 @@ if (!subUrl) {
 http.createServer((req, res) => {
 
     // Token 验证
-    if (token) {
+    if (token && req.url !== "/" + token) {
 
-       const url = new URL(req.url, "http://localhost");
+        res.writeHead(403, {
+            "Content-Type": "text/plain; charset=utf-8"
+        });
 
-       if (url.searchParams.get("token") !== token) {
+        res.end("Forbidden");
 
-           res.writeHead(403, {
-               "Content-Type": "text/plain; charset=utf-8"
-           });
-
-           res.end("Forbidden");
-
-           return;
-
-       }
+        return;
 
     }
 
