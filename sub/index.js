@@ -41,6 +41,18 @@ const token = env.TOKEN || "";
 let locked = false;
 const waiting = [];
 
+function releaseLock() {
+
+    locked = false;
+
+    const next = waiting.shift();
+
+    if (next) {
+
+        handleRequest(next.req, next.res);
+    }
+}
+
 if (!subUrl) {
     console.error("SUB_URL is empty.");
     process.exit(1);
@@ -108,15 +120,7 @@ function handleRequest(req, res) {
         res.end(err.message);
 
     // 释放并发锁
-    locked = false;
-
-    // 处理等待中的请求
-    const next = waiting.shift();
-
-    if (next) {
-
-        handleRequest(next.req, next.res);
-    }
+    releaseLock();
 
     });
 
@@ -130,15 +134,7 @@ function handleRequest(req, res) {
         }
 
     // 释放并发锁
-    locked = false;
-
-    // 处理等待中的请求
-    const next = waiting.shift();
-
-    if (next) {
-
-        handleRequest(next.req, next.res);
-    }
+    releaseLock();
 
     });
 
