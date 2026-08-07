@@ -138,7 +138,6 @@ function handleRequest(req, res) {
     if (next) {
 
         handleRequest(next.req, next.res);
-
     }
 
     });
