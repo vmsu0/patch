@@ -38,12 +38,33 @@ const port = Number(env.ARGO_PORT || 8001);
 
 const subUrl = env.SUB_URL;
 
+const token = env.TOKEN || "";
+
 if (!subUrl) {
     console.error("SUB_URL is empty.");
     process.exit(1);
 }
 
 http.createServer((req, res) => {
+
+    // Token 验证
+       if (token) {
+
+        const url = new URL(req.url, "http://localhost");
+
+        if (url.searchParams.get("token") !== token) {
+
+            res.writeHead(403, {
+                "Content-Type": "text/plain; charset=utf-8"
+            });
+
+            res.end("Forbidden");
+
+            return;
+
+        }
+
+    }
 
     const curl = spawn("curl", [
         "-A",
